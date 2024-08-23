@@ -6,6 +6,8 @@ cmake_minimum_required(VERSION 3.9)
 # Keep the version below in sync with the one in db.h
 project(leveldb VERSION 1.23.0 LANGUAGES C CXX)
 
+find_package (JNI)
+
 # C standard can be overridden when this is used as a sub-project.
 if(NOT CMAKE_C_STANDARD)
   # This project can use C11, but will gracefully decay down to C89.
@@ -285,6 +287,17 @@ add_executable(leveldbutil
   "db/leveldbutil.cc"
 )
 target_link_libraries(leveldbutil leveldb)
+
+if(JNI_FOUND)
+  add_library(leveldb-jni MODULE 
+	jni/leveldbjni.cc
+	jni/org_tron_leveldb_DB.h
+	jni/org_tron_leveldb_DBIterator.h
+	jni/org_tron_leveldb_WriteBatch.h
+	)
+  target_include_directories(leveldb-jni PRIVATE ${JNI_INCLUDE_DIRS} jni)
+  target_link_libraries(leveldb-jni PRIVATE leveldb)
+endif(JNI_FOUND)
 
 if(LEVELDB_BUILD_TESTS)
   enable_testing()
