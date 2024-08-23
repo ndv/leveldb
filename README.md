@@ -1,5 +1,5 @@
-This fork adds Java Native Interface to the (Google LevelDB database library)[https://github.com/google/leveldb]. Only contains native code. 
-See the corresponding Java classes here: (Tron Windows port)[https://github.com/ndv/java-tron].
+This fork adds Java Native Interface to the [Google LevelDB database library](https://github.com/google/leveldb). Only contains native code. 
+See the corresponding Java classes here: [Tron Windows port](https://github.com/ndv/java-tron).
 
 LevelDB is a fast key-value storage library written at Google that provides an ordered mapping from string keys to string values.
 
