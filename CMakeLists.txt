@@ -7,6 +7,7 @@ cmake_minimum_required(VERSION 3.9)
 project(leveldb VERSION 1.23.0 LANGUAGES C CXX)
 
 find_package (JNI)
+find_package (snappy)
 
 # C standard can be overridden when this is used as a sub-project.
 if(NOT CMAKE_C_STANDARD)
@@ -41,9 +42,15 @@ check_include_file("unistd.h" HAVE_UNISTD_H)
 
 include(CheckLibraryExists)
 check_library_exists(crc32c crc32c_value "" HAVE_CRC32C)
-check_library_exists(snappy snappy_compress "" HAVE_SNAPPY)
 check_library_exists(zstd zstd_compress "" HAVE_ZSTD)
 check_library_exists(tcmalloc malloc "" HAVE_TCMALLOC)
+
+if (snappy_FOUND)
+  message("snappy was found")
+  set(HAVE_SNAPPY "ON" CACHE BOOL "Use Snappy compression")
+else()
+  check_library_exists(snappy snappy_compress "" HAVE_SNAPPY)
+endif(snappy_FOUND)
 
 include(CheckCXXSymbolExists)
 # Using check_cxx_symbol_exists() instead of check_c_symbol_exists() because
@@ -263,18 +270,20 @@ if(BUILD_SHARED_LIBS)
       LEVELDB_SHARED_LIBRARY
   )
 endif(BUILD_SHARED_LIBS)
-
 if(HAVE_CLANG_THREAD_SAFETY)
   target_compile_options(leveldb
     PUBLIC
       -Werror -Wthread-safety)
 endif(HAVE_CLANG_THREAD_SAFETY)
-
 if(HAVE_CRC32C)
   target_link_libraries(leveldb crc32c)
 endif(HAVE_CRC32C)
 if(HAVE_SNAPPY)
-  target_link_libraries(leveldb snappy)
+  if (snappy_FOUND)
+    target_link_libraries(leveldb Snappy::snappy)
+  else()
+    target_link_libraries(leveldb snappy)
+  endif(snappy_FOUND)
 endif(HAVE_SNAPPY)
 if(HAVE_ZSTD)
   target_link_libraries(leveldb zstd)

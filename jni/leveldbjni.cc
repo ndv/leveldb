@@ -20,14 +20,16 @@ class JavaComparator : public Comparator {
   jclass cls_;
   jstring jname_;
   const char* name_;
+  jmethodID compare_mid_;
 
  public:
 
   JavaComparator(JNIEnv* env, jobject jobj) : env_(env), jobj_(jobj) {
-    cls_ = env_->GetObjectClass(jobj_);
+    cls_ = env_->FindClass("org/tron/leveldb/DBComparator");
     jmethodID mid = env_->GetMethodID(cls_, "name", "()Ljava/lang/String;");
     jname_ = static_cast<jstring>(env_->CallObjectMethod(jobj_, mid));
     name_ = env_->GetStringUTFChars(jname_, nullptr);
+    compare_mid_ = env_->GetMethodID(cls_, "compare", "([B[B)I");
   }
 
   ~JavaComparator() override { 
@@ -40,14 +42,14 @@ class JavaComparator : public Comparator {
   //   == 0 iff "a" == "b",
   //   > 0 iff "a" > "b"
   int Compare(const Slice& a, const Slice& b) const override {
-    jmethodID mid = env_->GetMethodID(cls_, "compare", "([B[B)I");
     jbyteArray jba = env_->NewByteArray(a.size());
     jbyteArray jbb = env_->NewByteArray(b.size());
     env_->SetByteArrayRegion(jba, 0, a.size(),
                              reinterpret_cast<const jbyte*>(a.data()));
     env_->SetByteArrayRegion(jbb, 0, b.size(),
                              reinterpret_cast<const jbyte*>(b.data()));
-    return env_->CallIntMethod(jobj_, mid, jba, jbb);
+
+    return env_->CallIntMethod(jobj_, compare_mid_, jba, jbb);
   }
 
   // The name of the comparator.  Used to check for comparator
@@ -229,11 +231,21 @@ ReadOptions getReadOptions(JNIEnv* env, jobject jread_options) {
   return read_options;
 }
 
+void throw_not_open(JNIEnv* env) {
+  jclass exception_class = env->FindClass("java/lang/IllegalStateException");
+  env->ThrowNew(exception_class, "DB is not open");
+}
+
 JNIEXPORT jobject JNICALL Java_org_tron_leveldb_DB_iterator(JNIEnv* env, jobject jdb,
                                                             jobject jread_options) {
   jclass db_class = env->GetObjectClass(jdb);
   DB* db = reinterpret_cast<DB*>(
       env->GetLongField(jdb, env->GetFieldID(db_class, "nativeDb", "J")));
+  if (!db) {
+    throw_not_open(env);
+    return NULL;
+  }
+
   ReadOptions read_options = getReadOptions(env, jread_options);
   Iterator* iterator = db->NewIterator(read_options);
   return env->NewObject(env->FindClass("org/tron/leveldb/DBIterator"),
@@ -257,6 +269,12 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_DB_put___3B_3B(JNIEnv* env, jobject
   jclass db_class = env->GetObjectClass(jdb);
   DB* db = reinterpret_cast<DB*>(
       env->GetLongField(jdb, env->GetFieldID(db_class, "nativeDb", "J")));
+
+  if (!db) {
+    throw_not_open(env);
+    return;
+  }
+
   Slice key_slice(reinterpret_cast<const char*>(env->GetByteArrayElements(key, nullptr)),
                   env->GetArrayLength(key));
   Slice data_slice(reinterpret_cast<const char*>(env->GetByteArrayElements(data, nullptr)), 
@@ -277,6 +295,11 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_DB_put___3B_3BZ(JNIEnv* env, jobjec
   jclass db_class = env->GetObjectClass(jdb);
   DB* db = reinterpret_cast<DB*>(
       env->GetLongField(jdb, env->GetFieldID(db_class, "nativeDb", "J")));
+  if (!db) {
+    throw_not_open(env);
+    return;
+  }
+
   Slice key_slice(
       reinterpret_cast<const char*>(env->GetByteArrayElements(key, nullptr)), 
       env->GetArrayLength(key));
@@ -299,6 +322,11 @@ JNIEXPORT jbyteArray JNICALL Java_org_tron_leveldb_DB_get(JNIEnv* env,
   jclass db_class = env->GetObjectClass(jdb);
   DB* db = reinterpret_cast<DB*>(
       env->GetLongField(jdb, env->GetFieldID(db_class, "nativeDb", "J")));
+  if (!db) {
+    throw_not_open(env);
+    return NULL;
+  }
+
   ReadOptions options;
   if (env->GetBooleanField(
           jdb, env->GetFieldID(db_class, "verifyChecksumsSet", "Z"))) {
@@ -332,6 +360,11 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_DB_delete(JNIEnv* env, jobject jdb,
   jclass db_class = env->GetObjectClass(jdb);
   DB* db = reinterpret_cast<DB*>(
       env->GetLongField(jdb, env->GetFieldID(db_class, "nativeDb", "J")));
+  if (!db) {
+    throw_not_open(env);
+    return;
+  }
+
   Slice key_slice(
       reinterpret_cast<const char*>(env->GetByteArrayElements(key, nullptr)), 
       env->GetArrayLength(key));
@@ -348,6 +381,11 @@ JNIEXPORT jobject JNICALL Java_org_tron_leveldb_DB_createWriteBatch(JNIEnv* env,
   jclass db_class = env->GetObjectClass(jdb);
   DB* db = reinterpret_cast<DB*>(
       env->GetLongField(jdb, env->GetFieldID(db_class, "nativeDb", "J")));
+  if (!db) {
+    throw_not_open(env);
+    return NULL;
+  }
+
   WriteBatch* batch = new WriteBatch();
   return env->NewObject(
       env->FindClass("org/tron/leveldb/WriteBatch"),
@@ -362,6 +400,11 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_DB_write(JNIEnv* env, jobject jdb,
   jclass db_class = env->GetObjectClass(jdb);
   DB* db = reinterpret_cast<DB*>(
       env->GetLongField(jdb, env->GetFieldID(db_class, "nativeDb", "J")));
+  if (!db) {
+    throw_not_open(env);
+    return ;
+  }
+
   jclass batch_class = env->GetObjectClass(jbatch);
   WriteBatch* batch = reinterpret_cast<WriteBatch*>(env->GetLongField(
       jbatch, env->GetFieldID(batch_class, "nativeHandle", "J")));
@@ -377,11 +420,21 @@ JNIEXPORT jstring JNICALL Java_org_tron_leveldb_DB_getProperty(JNIEnv* env,
   jclass db_class = env->GetObjectClass(jdb);
   DB* db = reinterpret_cast<DB*>(
       env->GetLongField(jdb, env->GetFieldID(db_class, "nativeDb", "J")));
+  if (!db) {
+    throw_not_open(env);
+    return NULL;
+  }
+
   const char* name = env->GetStringUTFChars(jname, nullptr);
   std::string value;
   db->GetProperty(name, &value);
   env->ReleaseStringUTFChars(jname, name);
   return env->NewStringUTF(value.c_str());
+}
+
+void throw_it_not_open(JNIEnv* env) {
+  jclass exception_class = env->FindClass("java/lang/IllegalStateException");
+  env->ThrowNew(exception_class, "DB iterator is not open");
 }
 
 JNIEXPORT void JNICALL Java_org_tron_leveldb_DBIterator_close(JNIEnv* env,
@@ -391,12 +444,18 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_DBIterator_close(JNIEnv* env,
       jiter, env->GetFieldID(iter_class, "nativeHandle", "J")));
   if (iter)
     delete iter;
+  env->SetLongField(
+      jiter, env->GetFieldID(iter_class, "nativeHandle", "J"), 0);
 }
 
 JNIEXPORT void JNICALL Java_org_tron_leveldb_DBIterator_seekToFirst(JNIEnv* env, jobject jiter) {
   jclass iter_class = env->GetObjectClass(jiter);
   Iterator* iter = reinterpret_cast<Iterator*>(env->GetLongField(
       jiter, env->GetFieldID(iter_class, "nativeHandle", "J")));
+  if (!iter) {
+    throw_it_not_open(env);
+    return;
+  }
   iter->SeekToFirst();
 }
 
@@ -404,6 +463,10 @@ JNIEXPORT jboolean JNICALL Java_org_tron_leveldb_DBIterator_hasNext(JNIEnv* env,
   jclass iter_class = env->GetObjectClass(jiter);
   Iterator* iter = reinterpret_cast<Iterator*>(env->GetLongField(
       jiter, env->GetFieldID(iter_class, "nativeHandle", "J")));
+  if (!iter) {
+    throw_it_not_open(env);
+    return 0;
+  }
   return iter->Valid();
 }
 
@@ -412,6 +475,11 @@ JNIEXPORT jobject JNICALL Java_org_tron_leveldb_DBIterator_next(JNIEnv* env,
   jclass iter_class = env->GetObjectClass(jiter);
   Iterator* iter = reinterpret_cast<Iterator*>(env->GetLongField(
       jiter, env->GetFieldID(iter_class, "nativeHandle", "J")));
+  if (!iter) {
+    throw_it_not_open(env);
+    return NULL;
+  }
+
   jbyteArray key_array = env->NewByteArray(iter->key().size());
   env->SetByteArrayRegion(key_array, 0, iter->key().size(),
                           reinterpret_cast<const jbyte*>(iter->key().data()));
@@ -434,6 +502,11 @@ Java_org_tron_leveldb_DBIterator_peekNext(JNIEnv* env, jobject jiter) {
   jclass iter_class = env->GetObjectClass(jiter);
   Iterator* iter = reinterpret_cast<Iterator*>(env->GetLongField(
       jiter, env->GetFieldID(iter_class, "nativeHandle", "J")));
+  if (!iter) {
+    throw_it_not_open(env);
+    return NULL;
+  }
+
   jbyteArray key_array = env->NewByteArray(iter->key().size());
   env->SetByteArrayRegion(key_array, 0, iter->key().size(),
                           reinterpret_cast<const jbyte*>(iter->key().data()));
@@ -453,6 +526,11 @@ Java_org_tron_leveldb_DBIterator_seekToLast(JNIEnv* env, jobject jiter) {
   jclass iter_class = env->GetObjectClass(jiter);
   Iterator* iter = reinterpret_cast<Iterator*>(env->GetLongField(
       jiter, env->GetFieldID(iter_class, "nativeHandle", "J")));
+  if (!iter) {
+    throw_it_not_open(env);
+    return;
+  }
+
   iter->SeekToLast();
 }
 
@@ -461,6 +539,11 @@ JNIEXPORT jboolean JNICALL Java_org_tron_leveldb_DBIterator_hasPrev(JNIEnv* env,
   jclass iter_class = env->GetObjectClass(jiter);
   Iterator* iter = reinterpret_cast<Iterator*>(env->GetLongField(
       jiter, env->GetFieldID(iter_class, "nativeHandle", "J")));
+  if (!iter) {
+    throw_it_not_open(env);
+    return 0;
+  }
+
   return iter->Valid();
 }
 
@@ -469,6 +552,11 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_DBIterator_prev(JNIEnv* env,
   jclass iter_class = env->GetObjectClass(jiter);
   Iterator* iter = reinterpret_cast<Iterator*>(env->GetLongField(
       jiter, env->GetFieldID(iter_class, "nativeHandle", "J")));
+  if (!iter) {
+    throw_it_not_open(env);
+    return;
+  }
+
   iter->Prev();
 }
 
@@ -477,6 +565,11 @@ Java_org_tron_leveldb_DBIterator_peekPrev(JNIEnv* env, jobject jiter) {
   jclass iter_class = env->GetObjectClass(jiter);
   Iterator* iter = reinterpret_cast<Iterator*>(env->GetLongField(
       jiter, env->GetFieldID(iter_class, "nativeHandle", "J")));
+  if (!iter) {
+    throw_it_not_open(env);
+    return NULL;
+  }
+
   jbyteArray key_array = env->NewByteArray(iter->key().size());
   env->SetByteArrayRegion(key_array, 0, iter->key().size(),
                           reinterpret_cast<const jbyte*>(iter->key().data()));
@@ -497,6 +590,11 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_DBIterator_seek(JNIEnv* env,
   jclass iter_class = env->GetObjectClass(jiter);
   Iterator* iter = reinterpret_cast<Iterator*>(env->GetLongField(
       jiter, env->GetFieldID(iter_class, "nativeHandle", "J")));
+  if (!iter) {
+    throw_it_not_open(env);
+    return;
+  }
+
   Slice key_slice(
       reinterpret_cast<const char*>(env->GetByteArrayElements(key, nullptr)), 
       env->GetArrayLength(key));
@@ -517,6 +615,11 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_WriteBatch_close(JNIEnv* env,
                     0);
 }
 
+void throw_batch_not_open(JNIEnv* env) {
+  jclass exception_class = env->FindClass("java/lang/IllegalStateException");
+  env->ThrowNew(exception_class, "WriteBatch is not open");
+}
+
 JNIEXPORT void JNICALL Java_org_tron_leveldb_WriteBatch_put(JNIEnv* env,
                                                             jobject jbatch,
                                                             jbyteArray key,
@@ -524,6 +627,11 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_WriteBatch_put(JNIEnv* env,
   jclass batch_class = env->GetObjectClass(jbatch);
   WriteBatch* batch = reinterpret_cast<WriteBatch*>(env->GetLongField(
       jbatch, env->GetFieldID(batch_class, "nativeHandle", "J")));
+  if (!batch) {
+    throw_batch_not_open(env);
+    return;
+  }
+
   Slice key_slice(
       reinterpret_cast<const char*>(env->GetByteArrayElements(key, nullptr)), 
       env->GetArrayLength(key));
@@ -545,6 +653,11 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_WriteBatch_delete(JNIEnv* env,
   jclass batch_class = env->GetObjectClass(jbatch);
   WriteBatch* batch = reinterpret_cast<WriteBatch*>(env->GetLongField(
       jbatch, env->GetFieldID(batch_class, "nativeHandle", "J")));
+  if (!batch) {
+    throw_batch_not_open(env);
+    return;
+  }
+
   Slice key_slice(
       reinterpret_cast<const char*>(env->GetByteArrayElements(key, nullptr)), 
       env->GetArrayLength(key));
