@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 3.22)
 # Keep the version below in sync with the one in db.h
 project(leveldb VERSION 1.23.0 LANGUAGES C CXX)
 
@@ -31,6 +31,7 @@ if (WIN32)
   add_definitions(-D_UNICODE -DUNICODE)
 else (WIN32)
   set(LEVELDB_PLATFORM_NAME LEVELDB_PLATFORM_POSIX)
+  add_compile_options(-fPIC)
 endif (WIN32)
 
 option(LEVELDB_BUILD_TESTS "Build LevelDB's unit tests" ON)
@@ -40,17 +41,23 @@ option(LEVELDB_INSTALL "Install LevelDB's header and library" ON)
 include(CheckIncludeFile)
 check_include_file("unistd.h" HAVE_UNISTD_H)
 
-include(CheckLibraryExists)
-check_library_exists(crc32c crc32c_value "" HAVE_CRC32C)
-check_library_exists(zstd zstd_compress "" HAVE_ZSTD)
-check_library_exists(tcmalloc malloc "" HAVE_TCMALLOC)
+include(CheckCSourceCompiles)
+
+set(CMAKE_REQUIRED_LIBRARIES crc32c)
+check_c_source_compiles("void crc32c_value();void main(){}" HAVE_CRC32C)
+
+set(CMAKE_REQUIRED_LIBRARIES zstd)
+check_c_source_compiles("void zstd_compress();void main(){}" HAVE_ZSTD)
 
 if (snappy_FOUND)
   message("snappy was found")
   set(HAVE_SNAPPY "ON" CACHE BOOL "Use Snappy compression")
 else()
-  check_library_exists(snappy snappy_compress "" HAVE_SNAPPY)
+  set(CMAKE_REQUIRED_LIBRARIES snappy)
+  check_c_source_compiles("void snappy_compress();void main(){}" HAVE_SNAPPY)
 endif(snappy_FOUND)
+
+unset(CMAKE_REQUIRED_LIBRARIES)
 
 include(CheckCXXSymbolExists)
 # Using check_cxx_symbol_exists() instead of check_c_symbol_exists() because
@@ -278,6 +285,9 @@ endif(HAVE_CLANG_THREAD_SAFETY)
 if(HAVE_CRC32C)
   target_link_libraries(leveldb crc32c)
 endif(HAVE_CRC32C)
+if(HAVE_ZSTD)
+  target_link_libraries(leveldb zstd)
+endif(HAVE_CRC32C)
 if(HAVE_SNAPPY)
   if (snappy_FOUND)
     target_link_libraries(leveldb Snappy::snappy)
@@ -285,12 +295,6 @@ if(HAVE_SNAPPY)
     target_link_libraries(leveldb snappy)
   endif(snappy_FOUND)
 endif(HAVE_SNAPPY)
-if(HAVE_ZSTD)
-  target_link_libraries(leveldb zstd)
-endif(HAVE_ZSTD)
-if(HAVE_TCMALLOC)
-  target_link_libraries(leveldb tcmalloc)
-endif(HAVE_TCMALLOC)
 
 # Needed by port_stdcxx.h
 find_package(Threads REQUIRED)
@@ -463,7 +467,10 @@ if(LEVELDB_BUILD_BENCHMARKS)
     leveldb_benchmark("benchmarks/db_bench.cc")
   endif(NOT BUILD_SHARED_LIBS)
 
-  check_library_exists(sqlite3 sqlite3_open "" HAVE_SQLITE3)
+  set(CMAKE_REQUIRED_LIBRARIES sqlite3)
+  check_c_source_compiles("void sqlite3_open();void main(){}" HAVE_SQLITE3)
+  unset(CMAKE_REQUIRED_LIBRARIES)
+  
   if(HAVE_SQLITE3)
     leveldb_benchmark("benchmarks/db_bench_sqlite3.cc")
     target_link_libraries(db_bench_sqlite3 sqlite3)

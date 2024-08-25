@@ -44,37 +44,90 @@ git clone --recurse-submodules https://github.com/google/leveldb.git
 
 This project supports [CMake](https://cmake.org/) out of the box.
 
-### Build for POSIX
+## Building for Ubuntu
 
-Quick start:
+### Install snappy (optional)
+
+snappy is an optional compression method for stored data.
+
+```
+git clone https://github.com/google/snappy --recursive
+mkdir snappy-build
+cd snappy-build
+export CXXFLAGS=-fPIC
+cmake ../snappy
+make
+sudo make install
+```
+
+### Install zstd (optional)
+
+zstd is one of the compression methods supported by LevelDB. It offers better compression rates than snappy
+at the expense of less throughput.
+
+```
+git clone https://github.com/facebook/zstd.git
+cd zstd
+make
+sudo make install
+```
+
+### Install crc32c (optional)
+
+crc32 enabled checking data integrity.
+
+```
+git clone https://github.com/google/crc32c.git --recursive
+mkdir build-crc32c
+cd build-crc32c
+cmake ../crc32c
+make
+sudo make install
+```
+
+### Install Java (optional, for JNI)
+
+If you plan to use LevelDB from Java, download and install Oracle's Jdk 11 (not tested on other versions).
+Set the JAVA_HOME enviromnet variable to point the JDK installation path, so that $JAVA_HOME/bin/javac is runnable.
+
+### Building LevelDB itself
 
 ```bash
-mkdir -p build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release .. && cmake --build .
+git clone https://github.com/ndv/leveldb.git --recursive
+mkdir build-leveldb
+cd build-leveldb
+cmake ../leveldb
+make
 ```
 
-### Building for Windows
+## Building for Windows
 
-First generate the Visual Studio 2017 project/solution files:
+Note the zstd and crc32c aren't supportted on Windows yet.
+
+### Building and installing Snappy (optional)
 
 ```cmd
-mkdir build
-cd build
-cmake -G "Visual Studio 15" ..
+git clone https://github.com/google/snappy --recursive
+mkdir snappy-build
+cd snappy-build
+cmake -G "Visual Studio 17 Win64" ../snappy
 ```
-The default default will build for x86. For 64-bit run:
+
+Then open snappy.sln in Visual Studio as Administrator. Choose "Release" configuration on the top panel,
+right-click the 'INSTALL' project and select 'Build'.
+
+### Building LevelDB itself
+
+First generate the Visual Studio 2022 project/solution files:
 
 ```cmd
-cmake -G "Visual Studio 15 Win64" ..
+git clone https://github.com/ndv/leveldb.git --recursive
+mkdir build-leveldb
+cd build-leveldb
+cmake -G "Visual Studio 17 Win64" ../leveldb
 ```
-
-To compile the Windows solution from the command-line:
-
-```cmd
-devenv /build Debug leveldb.sln
-```
-
-or open leveldb.sln in Visual Studio and build from within.
+Then open leveldb.sln in Visual Studio and build from within by right-clicking the 'leveldb-jni' project
+and selecting 'Build'. Choose "Release" configuration on the top panel.
 
 Please see the CMake documentation and `CMakeLists.txt` for more advanced usage.
 
