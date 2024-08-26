@@ -109,25 +109,38 @@ class JavaComparator : public Comparator {
   }
 };
 
+thread_local std::vector<std::string> logs;
+
 class JavaLogger : public Logger {
  private:
   JNIEnv* env_;
   jobject jobj_;
-  jclass cls_;
+  jmethodID mid_;
 
  public:
   JavaLogger(JNIEnv* env, jobject jobj) : env_(env), jobj_(jobj) {
-    cls_ = env_->GetObjectClass(jobj_);
+    jclass cls_ = env_->FindClass("org/tron/leveldb/Logger");
+    mid_ = env_->GetMethodID(cls_, "log", "(Ljava/lang/String;)V");
   }
 
   ~JavaLogger() override { env_->DeleteGlobalRef(jobj_); }
 
   void Logv(const char* format, std::va_list ap) override {
-    jmethodID mid = env_->GetMethodID(cls_, "log", "(Ljava/lang/String;)V");
-    char buffer[1024];
-    vsnprintf(buffer, sizeof(buffer), format, ap);
-    jstring jstr = env_->NewStringUTF(buffer);
-    env_->CallVoidMethod(jobj_, mid, jstr);
+	char buf[1024];
+	vsnprintf(buf, sizeof(buf), format, ap);
+	logs.push_back(buf);
+  }
+  
+  void start() {
+	  logs.clear();
+  }
+  
+  void end() {
+	for (auto &s: logs) {
+	  jstring jstr = env_->NewStringUTF(s.c_str());
+	  env_->CallVoidMethod(jobj_, mid_, jstr);
+	}
+    logs.clear();
   }
 };
 
@@ -193,11 +206,14 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_DB_init(JNIEnv* env, jobject jdb, j
       joptions,
       env->GetFieldID(options_class, "logger", "Lorg/tron/leveldb/Logger;"));
 
+  JavaLogger* logger = nullptr;
+  
   if (jlogger != NULL) {
-    auto ptr = new JavaLogger(env, env->NewGlobalRef(jlogger));
+    logger = new JavaLogger(env, env->NewGlobalRef(jlogger));
     env->SetLongField(jdb, env->GetFieldID(db_class, "nativeLogger", "J"),
-                      reinterpret_cast<jlong>(ptr));
-    options.info_log = ptr;
+                      reinterpret_cast<jlong>(logger));
+	logger->start();
+    options.info_log = logger;
   }
 
   jclass file_class = env->GetObjectClass(jfile);
@@ -218,6 +234,8 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_DB_init(JNIEnv* env, jobject jdb, j
                       reinterpret_cast<jlong>(db));
   
   }
+  
+  if (logger) logger->end();
 }
 
 ReadOptions getReadOptions(JNIEnv* env, jobject jread_options) {
@@ -236,6 +254,19 @@ void throw_not_open(JNIEnv* env) {
   env->ThrowNew(exception_class, "DB is not open");
 }
 
+class StartLog {
+	JavaLogger* logger;
+	
+public:
+	StartLog(JNIEnv* env, jobject jdb) {
+		logger = reinterpret_cast<JavaLogger*>(env->GetLongField(jdb, env->GetFieldID(env->FindClass("org/tron/leveldb/DB"), "nativeLogger", "J")));
+		if (logger) logger->start();
+	}
+	~StartLog() {
+		if (logger) logger->end();
+	}
+};
+
 JNIEXPORT jobject JNICALL Java_org_tron_leveldb_DB_iterator(JNIEnv* env, jobject jdb,
                                                             jobject jread_options) {
   jclass db_class = env->GetObjectClass(jdb);
@@ -247,6 +278,9 @@ JNIEXPORT jobject JNICALL Java_org_tron_leveldb_DB_iterator(JNIEnv* env, jobject
   }
 
   ReadOptions read_options = getReadOptions(env, jread_options);
+  
+  StartLog log(env, jdb);
+  
   Iterator* iterator = db->NewIterator(read_options);
   return env->NewObject(env->FindClass("org/tron/leveldb/DBIterator"),
                  env->GetMethodID(env->FindClass("org/tron/leveldb/DBIterator"),
@@ -255,6 +289,7 @@ JNIEXPORT jobject JNICALL Java_org_tron_leveldb_DB_iterator(JNIEnv* env, jobject
 }
 
 JNIEXPORT void JNICALL Java_org_tron_leveldb_DB_close(JNIEnv* env, jobject jdb) {
+  StartLog log(env, jdb);
   jclass db_class = env->GetObjectClass(jdb);
   DB* db = reinterpret_cast<DB*>(
       env->GetLongField(jdb, env->GetFieldID(db_class, "nativeDb", "J")));
@@ -266,6 +301,7 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_DB_close(JNIEnv* env, jobject jdb) 
 JNIEXPORT void JNICALL Java_org_tron_leveldb_DB_put___3B_3B(JNIEnv* env, jobject jdb,
                                                             jbyteArray key,
                                                             jbyteArray data) {
+  StartLog log(env, jdb);
   jclass db_class = env->GetObjectClass(jdb);
   DB* db = reinterpret_cast<DB*>(
       env->GetLongField(jdb, env->GetFieldID(db_class, "nativeDb", "J")));
@@ -292,6 +328,7 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_DB_put___3B_3BZ(JNIEnv* env, jobjec
                                                              jbyteArray key,
                                                              jbyteArray data,
                                                              jboolean sync) {
+  StartLog log(env, jdb);
   jclass db_class = env->GetObjectClass(jdb);
   DB* db = reinterpret_cast<DB*>(
       env->GetLongField(jdb, env->GetFieldID(db_class, "nativeDb", "J")));
@@ -319,6 +356,7 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_DB_put___3B_3BZ(JNIEnv* env, jobjec
 JNIEXPORT jbyteArray JNICALL Java_org_tron_leveldb_DB_get(JNIEnv* env,
                                                           jobject jdb,
                                                           jbyteArray key) {
+  StartLog log(env, jdb);
   jclass db_class = env->GetObjectClass(jdb);
   DB* db = reinterpret_cast<DB*>(
       env->GetLongField(jdb, env->GetFieldID(db_class, "nativeDb", "J")));
@@ -357,6 +395,7 @@ JNIEXPORT jbyteArray JNICALL Java_org_tron_leveldb_DB_get(JNIEnv* env,
 JNIEXPORT void JNICALL Java_org_tron_leveldb_DB_delete(JNIEnv* env, jobject jdb,
                                                        jbyteArray key,
                                                        jboolean sync) {
+  StartLog log(env, jdb);
   jclass db_class = env->GetObjectClass(jdb);
   DB* db = reinterpret_cast<DB*>(
       env->GetLongField(jdb, env->GetFieldID(db_class, "nativeDb", "J")));
@@ -378,6 +417,7 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_DB_delete(JNIEnv* env, jobject jdb,
 
 JNIEXPORT jobject JNICALL Java_org_tron_leveldb_DB_createWriteBatch(JNIEnv* env, 
                                                                     jobject jdb) {
+  StartLog log(env, jdb);
   jclass db_class = env->GetObjectClass(jdb);
   DB* db = reinterpret_cast<DB*>(
       env->GetLongField(jdb, env->GetFieldID(db_class, "nativeDb", "J")));
@@ -397,6 +437,7 @@ JNIEXPORT jobject JNICALL Java_org_tron_leveldb_DB_createWriteBatch(JNIEnv* env,
 JNIEXPORT void JNICALL Java_org_tron_leveldb_DB_write(JNIEnv* env, jobject jdb,
                                                       jobject jbatch,
                                                       jboolean sync) {
+  StartLog log(env, jdb);
   jclass db_class = env->GetObjectClass(jdb);
   DB* db = reinterpret_cast<DB*>(
       env->GetLongField(jdb, env->GetFieldID(db_class, "nativeDb", "J")));
