@@ -356,6 +356,8 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_DB_put___3B_3BZ(JNIEnv* env, jobjec
 JNIEXPORT jbyteArray JNICALL Java_org_tron_leveldb_DB_get(JNIEnv* env,
                                                           jobject jdb,
                                                           jbyteArray key) {
+  if (!key) return NULL;
+
   StartLog log(env, jdb);
   jclass db_class = env->GetObjectClass(jdb);
   DB* db = reinterpret_cast<DB*>(
@@ -395,6 +397,8 @@ JNIEXPORT jbyteArray JNICALL Java_org_tron_leveldb_DB_get(JNIEnv* env,
 JNIEXPORT void JNICALL Java_org_tron_leveldb_DB_delete(JNIEnv* env, jobject jdb,
                                                        jbyteArray key,
                                                        jboolean sync) {
+  if (!key) return;
+
   StartLog log(env, jdb);
   jclass db_class = env->GetObjectClass(jdb);
   DB* db = reinterpret_cast<DB*>(
@@ -691,6 +695,8 @@ JNIEXPORT void JNICALL Java_org_tron_leveldb_WriteBatch_put(JNIEnv* env,
 JNIEXPORT void JNICALL Java_org_tron_leveldb_WriteBatch_delete(JNIEnv* env,
                                                                jobject jbatch,
                                                                jbyteArray key) {
+  if (!key) return;
+
   jclass batch_class = env->GetObjectClass(jbatch);
   WriteBatch* batch = reinterpret_cast<WriteBatch*>(env->GetLongField(
       jbatch, env->GetFieldID(batch_class, "nativeHandle", "J")));
